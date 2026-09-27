@@ -14,8 +14,8 @@
 | Run ID | 36319875944 |
 | Remote file audit | PASS |
 | Forbidden files present | NO |
-| SourceLink remote commit exists | **FAIL**（NuGet 包 PDB 绑定的 commit 不在 GitHub 上；CLI 产物 PASS） |
-| NuGet.org | NOT PUBLISHED |
+| SourceLink remote commit exists | **PASS**（发布阶段重打产物绑定 `89dcf7c` 后；原始上传时 NuGet 包为 FAIL，见第 10 节更新） |
+| NuGet.org | **PUBLISHED 0.1.0**（Trusted Publishing / GitHub Actions OIDC，无 API Key，见第 10 节更新） |
 | GitHub Release | NOT CREATED |
 | v0.1.0 tag | NOT CREATED |
 
@@ -111,3 +111,41 @@ SourceLink remote commit: FAIL（NuGet 包，见第 7 节；CLI 产物 PASS）
 ```
 
 **上传 AI 已完成职责范围内全部步骤，除 SourceLink（NuGet 包）外无遗留项；该遗留项属开发 AI 的最终 release artifacts 重新生成任务。**
+
+---
+
+## 10. 发布阶段更新（2026-09-27）
+
+开发 AI 重新生成最终 release artifacts（`artifacts/FINAL_RELEASE_HANDOFF.txt`），全部四份 SHA256 与交接文件一致；snupkg 内部 PDB 现绑定 `89dcf7c`（此前 FAIL 的 SourceLink 遗留项**已解决**，`eng/sourcelink-reader` 复核 template = `.../89dcf7c.../*`）。
+
+### v0.1.0 tag 与 GitHub Release
+
+- `v0.1.0`（annotated）→ commit `89dcf7c`：本地与远程均核验（tag 对象 `7a8686b3…`，peel 到 `89dcf7c…`）。
+- GitHub Release v0.1.0：**已发布**（非草稿/非预发布），3 个资产全部 uploaded 且字节数与交接文件一致：
+  - `WinAudioRoute.Cli-0.1.0-win-x64.zip`（6,524,659 B）
+  - `WinAudioRoute.Cli-0.1.0-win-arm64.zip`（6,515,156 B）
+  - `SHA256SUMS.txt`（395 B）
+  - 链接：https://github.com/kunkunkunQoQ/WinAudioRoute/releases/tag/v0.1.0
+
+### NuGet.org 发布（Trusted Publishing，无 API Key）
+
+按建议弃用长期 API Key，改用 NuGet.org **Trusted Publishing（OIDC）**：
+
+- 新增 `.github/workflows/publish.yml`（commit `69a4c50` → 修正 nuget.org 用户名 `4055c3c` → 幂等化 `5f02889`）：
+  - 触发：push `v*` tag / `workflow_dispatch`；`permissions: id-token: write`；
+  - `NuGet/login@v1` 用 GitHub OIDC 换取 **1 小时临时** API Key（`user: kunkunkun`，nuget.org Profile Name）；
+  - 构建 + 单元测试 + Pack + 包内容/SourceLink 校验后推送 nupkg 与 snupkg。
+- 用户已在 nuget.org 创建 Trusted Publishing 策略并核验 **Active**：Package owner `kunkunkun`、Scopes=Push new packages and package versions、Glob=`WinAudioRoute`、Publisher=GitHubActions、Repository Owner=`kunkunkunQoQ`、Repository=`WinAudioRoute`、Workflow=`publish.yml`。
+- 发布运行：
+  - `36323212253`（首次）：nupkg 推送成功；独立 snupkg 步骤遇 409（nupkg 步骤已自动提交符号包，正在验证）→ 修复为 `--skip-duplicate`；
+  - `36323420403`（第二次）：**success**，全步骤通过（OIDC 登录 / nupkg / snupkg）。
+- 远程核验：https://www.nuget.org/packages/WinAudioRoute/0.1.0 → **HTTP 200**，页面标题 `WinAudioRoute 0.1.0`。
+
+### 发布后状态
+
+```text
+NuGet.org:      PUBLISHED 0.1.0（nupkg + snupkg，无长期密钥）
+GitHub Release: CREATED v0.1.0（3 assets）
+v0.1.0 tag:     CREATED（→ 89dcf7c）
+SourceLink:     PASS（nupkg/snupkg/CLI 均绑定存在于 GitHub 的 commit）
+```
