@@ -8,7 +8,8 @@
 | 目标仓库 | `https://github.com/kunkunkunQoQ/WinAudioRoute` |
 | 本地仓库 | `<workspace>/WinAudioRoute`（独立 Git 仓库，`origin` 已配置） |
 | 分支 | `main` |
-| Commit 数 | 2 |
+| Commit 数 | 3 |
+| 当前 HEAD | `9506a72bf37418a356b77936540d2b06122d3ee3` |
 | 工作树 | **clean** |
 | 远程创建 | **阻塞** — 见 [GitHub CLI](#github-cli-阻塞项) |
 
@@ -60,18 +61,36 @@ e7eb20e79ebb237c1633374f70dbbaa664887e34
 | 变更 | 5 文件，+316 / −5 |
 | 原因 | 修复 SourceLink 工作树探测路径；新增 `eng/verify-sourcelink.ps1` 与 `eng/sourcelink-reader/`；CI 增加 SourceLink 校验步骤 |
 
+### 第三个 commit
+
+```text
+9506a72bf37418a356b77936540d2b06122d3ee3
+```
+
+| 字段 | 值 |
+| --- | --- |
+| 提交信息 | `Add GitHub upload report` |
+| 变更 | 1 文件，+756 |
+| 说明 | 本报告本身 |
+
 **当前 HEAD**：
 
 ```text
-778bcdecdceaf2c95294de9f0fc2907adfbc0718
+9506a72bf37418a356b77936540d2b06122d3ee3
 ```
 
 ### 历史
 
 ```text
+9506a72 Add GitHub upload report
 778bcde Enable SourceLink and verify it from the PDB
 e7eb20e Initial release preparation for WinAudioRoute 0.1.0
 ```
+
+> **关于交付产物绑定的 commit**：NuGet 包与 CLI 产物是在**最后一个提交之后**重新生成的，
+> 因此 SourceLink 与 `AssemblyInformationalVersion` 都绑定 `9506a72`（当前 HEAD）。
+> 这是刻意安排：任何新提交都会使既有 PDB 的 SHA 绑定过期，所以在 push 之前
+> **不再产生新的提交**，产物即为最终状态。
 
 ---
 
