@@ -8,7 +8,7 @@
 | Visibility | Public |
 | Default branch | main |
 | Original handoff SHA | `a7297b2e1bdcfd2a4ac37c3f00d56a0ed12bdf53` |
-| Final remote SHA | `a7297b2e1bdcfd2a4ac37c3f00d56a0ed12bdf53`（推送 main 时的远端 HEAD；本报告提交将在其后追加，见更新后的最终值） |
+| Final remote SHA | `75fe385a8e41e15c3187354de4a7fe177faf50a0`（本报告提交 `Add GitHub remote verification report` 推送后的远端 HEAD；原始 handoff SHA 之后仅追加了本报告及其 SHA 更新两个纯 Markdown 提交） |
 | Push | PASS |
 | GitHub Actions | PASS |
 | Run ID | 36319875944 |
