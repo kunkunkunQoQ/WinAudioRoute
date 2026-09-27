@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tooling-only project: reads the SourceLink metadata out of a portable PDB so that
+    eng/verify-sourcelink.ps1 can assert it.
+
+    It is deliberately NOT part of WinAudioRoute.sln and NOT referenced by anything, so it adds no
+    dependency to the library, the CLI, the samples, or the test suite. It is only ever built by the
+    verification script.
+
+    Why not use `dotnet sourcelink test`? That tool queries the source server over the network,
+    which would make the check depend on connectivity and on the commit already being pushed.
+    Reading the PDB directly verifies what was actually embedded.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>sourcelink-reader</AssemblyName>
+    <RootNamespace>SourceLinkReader</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- 独立构建，避免与解决方案的 RID/平台设置互相影响 -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.Metadata" Version="8.0.0" />
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

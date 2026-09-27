@@ -143,6 +143,10 @@ jobs:
         shell: pwsh
         run: ./eng/verify-package.ps1 -PackageDirectory ./artifacts/packages
 
+      - name: Verify SourceLink metadata
+        shell: pwsh
+        run: ./eng/verify-sourcelink.ps1
+
       # ----------------------------------------------------------------
       # Documentation checks
       # ----------------------------------------------------------------

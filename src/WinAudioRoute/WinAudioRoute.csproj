@@ -63,13 +63,12 @@
   </PropertyGroup>
 
   <!-- SourceLink：把 PDB 映射回 GitHub 源码。
-       仅在存在 .git 工作树时启用。
-       本仓库的源码是从 SonicRoute 提取后手工组织的；在 git init 之前没有可映射的提交，
-       此时显式关闭 SourceLink，而不是生成指向错误提交的坏链接或发出噪音警告。
+       仅在存在 .git 工作树时启用；没有 git 历史时显式关闭，而不是生成指向不存在提交的坏链接。
        注意：Exists() 的相对路径以**项目目录**为基准（不是 MSBuild 当前目录），
-       因此这里用 $(MSBuildProjectDirectory) 显式构造。 -->
+       并且仓库根就在这里的两级之上（src/WinAudioRoute → src → 仓库根），
+       因此用 $(MSBuildProjectDirectory) 显式构造为 ..\..。 -->
   <PropertyGroup>
-    <GitWorkTreeRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..'))</GitWorkTreeRoot>
+    <GitWorkTreeRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..'))</GitWorkTreeRoot>
     <HasGitWorkTree Condition="Exists('$(GitWorkTreeRoot)\.git')">true</HasGitWorkTree>
     <HasGitWorkTree Condition="'$(HasGitWorkTree)' == ''">false</HasGitWorkTree>
 
