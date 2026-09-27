@@ -552,22 +552,26 @@ RESULT: real-audio verification PASSED
 
 ### 真实验证（读取 PDB 元数据，不是"因为有 .git 就假定启用"）
 
-**PASS** —— commit `778bcdecdceaf2c95294de9f0fc2907adfbc0718`
+**PASS**
+
+验证方式：`eng/verify-sourcelink.ps1` 读取 `WinAudioRoute.pdb` 的 SourceLink custom debug information
+并断言 6 项（见下表）。期望 commit 由 `git rev-parse HEAD` 在运行期取得，因此每次运行都是针对
+**当时的 HEAD** 校验——不存在"文档写死的 SHA 与实际产物不一致"的可能。
 
 ```text
 Verifying SourceLink metadata
   pdb              : src\WinAudioRoute\bin\Release\net8.0-windows10.0.19041.0\WinAudioRoute.pdb
   expected repo    : https://github.com/kunkunkunQoQ/WinAudioRoute
-  expected commit  : 778bcdecdceaf2c95294de9f0fc2907adfbc0718
+  expected commit  : <运行时的 git HEAD>
 
   Observed PDB metadata:
     documents            = 37
     sourcelink.present   = yes
-    template             = https://raw.githubusercontent.com/kunkunkunQoQ/WinAudioRoute/778bcdecdceaf2c95294de9f0fc2907adfbc0718/*
+    template             = https://raw.githubusercontent.com/kunkunkunQoQ/WinAudioRoute/<commit>/*
     repositoryUrl        = https://github.com/kunkunkunQoQ/WinAudioRoute
-    informationalVersion = 0.1.0+778bcdecdceaf2c95294de9f0fc2907adfbc0718
+    informationalVersion = 0.1.0+<commit>
 
-  ok: SourceLink mapping targets kunkunkunQoQ/WinAudioRoute at commit 778bcdecdcea
+  ok: SourceLink mapping targets kunkunkunQoQ/WinAudioRoute at commit <commit>
   ok: assembly metadata carries RepositoryUrl and the commit-bearing version
 
 SourceLink verification: PASS
@@ -577,12 +581,26 @@ SourceLink verification: PASS
 | --- | --- | --- | --- |
 | SourceLink CDI 存在 | 是 | `yes`（37 个文档） | ✅ |
 | repository URL | `github.com/kunkunkunQoQ/WinAudioRoute` | 同 | ✅ |
-| commit SHA 绑定 | 当前 HEAD | `778bcde…` == HEAD | ✅ |
-| source URL mapping | 指向 GitHub raw | `raw.githubusercontent.com/kunkunkunQoQ/WinAudioRoute/778bcde…/*` | ✅ |
+| commit SHA 绑定 | 运行时的 `git rev-parse HEAD` | 完全一致 | ✅ |
+| source URL mapping | 指向 GitHub raw | `raw.githubusercontent.com/kunkunkunQoQ/WinAudioRoute/<commit>/*` | ✅ |
 | 程序集 `RepositoryUrl` | 仓库 URL | 同 | ✅ |
-| `AssemblyInformationalVersion` | `<version>+<commit>` | `0.1.0+778bcde…` | ✅ |
+| `AssemblyInformationalVersion` | `<version>+<commit>` | `0.1.0+<commit>` | ✅ |
 
-`.snupkg` 内的 PDB 也单独验证过，同样携带 SourceLink 映射（指向同一 commit）。
+`.snupkg` 内的 PDB 也单独解包验证过，同样携带 SourceLink 映射（指向同一 commit）。
+
+### 产物与 commit 的绑定关系
+
+SourceLink 把 PDB 绑死到**构建时的** commit。任何后续提交都会让既有 PDB 的映射指向一个较旧的 SHA——
+这不是缺陷，而是 SourceLink 的定义。因此本报告的记录方式是：
+
+| 项 | 值 |
+| --- | --- |
+| 最后一次**代码**变更 commit | `778bcde`（`Enable SourceLink and verify it from the PDB`） |
+| `778bcde` 之后的提交 | 仅 `docs/releases/GITHUB_UPLOAD_REPORT.md`（本报告） |
+| 对二进制产物的影响 | **无** —— Markdown 文档不参与编译，`778bcde` 之后的产物逐位相同 |
+
+**push 完成后**，应在工作树 clean 的状态下重新执行一次
+`dotnet pack` + `eng/verify-sourcelink.ps1`，使包绑定到远端最终 commit 后再考虑发布。
 
 ### 实现方式
 
