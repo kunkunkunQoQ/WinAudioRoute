@@ -17,14 +17,23 @@ name: publish
 #     Glob patterns      : WinAudioRoute
 #
 # Triggers:
-#   - push of a v* tag  (standard release flow for future versions)
-#   - manual dispatch   (used for the initial v0.1.0 publish)
+#   - push of a v* tag  -> version derived from the tag name (v0.2.0 -> 0.2.0)
+#   - manual dispatch   -> the `version` input is REQUIRED (a dispatch may have no tag)
+#
+# The package version is NEVER hard-coded in this file. It is resolved once into VERSION,
+# validated, passed to `dotnet pack -p:Version=...`, and then used to locate the produced
+# files. v0.1.1, v0.2.0, ... therefore work without editing this workflow.
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish, for example 0.2.0 (required for manual runs)'
+        required: true
+        type: string
 
 env:
   DOTNET_NOLOGO: 'true'
@@ -44,13 +53,114 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # SourceLink 与 symbols 需要完整历史
+          # SourceLink and symbols need the full history.
           fetch-depth: 0
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      # ------------------------------------------------------------------
+      # Resolve and validate the version BEFORE anything is built or pushed.
+      #
+      # A tag push has a real tag (github.ref_name, e.g. "v0.2.0").
+      # A manual dispatch may have none, so it must supply the `version` input.
+      # Both paths converge on the VERSION environment variable.
+      # ------------------------------------------------------------------
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          $eventName = '${{ github.event_name }}'
+          $raw = ''
+
+          if ($eventName -eq 'workflow_dispatch') {
+            $raw = '${{ inputs.version }}'
+            Write-Host 'Source: workflow_dispatch input'
+          }
+          else {
+            $raw = '${{ github.ref_name }}'
+            Write-Host "Source: pushed tag '$raw'"
+          }
+
+          $version = "$raw".Trim()
+          if ($version.StartsWith('v') -or $version.StartsWith('V')) {
+            $version = $version.Substring(1)
+          }
+
+          Write-Host "Raw version string : '$raw'"
+          Write-Host "Normalized version : '$version'"
+
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            Write-Error 'No version could be resolved. A manual dispatch requires the version input.'
+            exit 1
+          }
+
+          # Numeric 3-part version, optionally with a prerelease/build suffix.
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            Write-Error "Version '$version' does not match the required pattern."
+            exit 1
+          }
+
+          # When a tag drove the version, tag and version must agree exactly.
+          if ($eventName -eq 'push') {
+            $tag = '${{ github.ref_name }}'
+            if ($tag -ne "v$version") {
+              Write-Error "Tag '$tag' does not correspond to version '$version' (expected tag 'v$version')."
+              exit 1
+            }
+
+            Write-Host "Tag/version agreement : OK ($tag -> $version)"
+          }
+
+          "VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "VERSION=$version"
+
+      - name: Show resolved version
+        shell: pwsh
+        run: |
+          Write-Host "Publishing WinAudioRoute $env:VERSION"
+          Write-Host "Ref: ${{ github.ref }}  Event: ${{ github.event_name }}  SHA: ${{ github.sha }}"
+
+      # ------------------------------------------------------------------
+      # Single source of truth guard.
+      #
+      # VERSION is resolved once and every later step consumes that same value. This step fails
+      # the run if the project file disagrees with it, so a mismatch can never publish a package
+      # whose PackageVersion and AssemblyVersion come from different numbers.
+      #
+      # Comparison intentional: [version] normalizes the project value, while the resolved VERSION
+      # keeps the developer's exact spelling so a prerelease such as 0.2.0-preview.1 is not
+      # silently accepted as stable 0.2.0.
+      # ------------------------------------------------------------------
+      - name: Assert project version matches the resolved VERSION
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content src/WinAudioRoute/WinAudioRoute.csproj -Raw
+          $projectVersion = ([string]$project.Project.PropertyGroup.Version).Trim()
+
+          Write-Host "Resolved VERSION   : '$env:VERSION'"
+          Write-Host "csproj <Version>   : '$projectVersion'"
+
+          if ([string]::IsNullOrWhiteSpace($projectVersion)) {
+            Write-Error 'src/WinAudioRoute/WinAudioRoute.csproj does not declare a <Version>.'
+            exit 1
+          }
+
+          if ([string]$env:VERSION -ne $projectVersion) {
+            Write-Error ("Version source conflict: the workflow resolved '$env:VERSION' but " +
+                         "src/WinAudioRoute/WinAudioRoute.csproj declares '$projectVersion'. " +
+                         'Bump the project version in the same commit as the release, or correct the tag/input.')
+            exit 1
+          }
+
+          if ([version]$projectVersion -ne [version]$env:VERSION) {
+            Write-Error ("Resolved VERSION '$env:VERSION' is not a plain version equal to the project " +
+                         "version '$projectVersion'. Publishing is blocked.")
+            exit 1
+          }
+
+          Write-Host 'Version sources agree. This VERSION is used for pack, verification, and both pushes.'
 
       - name: Restore
         run: dotnet restore WinAudioRoute.sln
@@ -65,18 +175,43 @@ jobs:
           dotnet test WinAudioRoute.sln -c $env:CONFIGURATION --no-build
           --filter "Category!=Integration&Category!=Mutation&Category!=Hardware&Category!=RealAudio"
 
+      # The version comes from the resolved VERSION, not from the csproj default.
       - name: Pack
         run: >
           dotnet pack src/WinAudioRoute/WinAudioRoute.csproj -c $env:CONFIGURATION
-          --no-build -o ./artifacts/publish
+          --no-build -p:Version=$env:VERSION -o ./artifacts/publish
 
       - name: Verify package contents
         shell: pwsh
-        run: ./eng/verify-package.ps1 -PackageDirectory ./artifacts/publish
+        run: ./eng/verify-package.ps1 -PackageDirectory ./artifacts/publish -Version $env:VERSION
 
       - name: Verify SourceLink metadata
         shell: pwsh
         run: ./eng/verify-sourcelink.ps1
+
+      # Fail loudly rather than silently publishing the wrong file.
+      - name: Assert expected package files exist
+        shell: pwsh
+        run: |
+          $nupkg  = "./artifacts/publish/WinAudioRoute.$env:VERSION.nupkg"
+          $snupkg = "./artifacts/publish/WinAudioRoute.$env:VERSION.snupkg"
+
+          Write-Host 'Expecting:'
+          Write-Host "  $nupkg"
+          Write-Host "  $snupkg"
+
+          $missing = @()
+          if (-not (Test-Path $nupkg))  { $missing += $nupkg }
+          if (-not (Test-Path $snupkg)) { $missing += $snupkg }
+
+          if ($missing.Count -gt 0) {
+            Write-Host 'Produced files:'
+            Get-ChildItem ./artifacts/publish -File | ForEach-Object { Write-Host "  $($_.Name)" }
+            Write-Error ('Version mismatch between the resolved VERSION and the packed output: ' + ($missing -join ', '))
+            exit 1
+          }
+
+          Write-Host 'Both package files are present.'
 
       # Exchange the OIDC id-token for a short-lived NuGet API key.
       # `user` must be the nuget.org profile name (not the email address).
@@ -92,14 +227,14 @@ jobs:
       # returns 409 if the version/symbols are already present or validating).
       - name: Push nupkg
         run: >
-          dotnet nuget push ./artifacts/publish/WinAudioRoute.0.1.0.nupkg
+          dotnet nuget push ./artifacts/publish/WinAudioRoute.$env:VERSION.nupkg
           --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
       - name: Push snupkg
         run: >
-          dotnet nuget push ./artifacts/publish/WinAudioRoute.0.1.0.snupkg
+          dotnet nuget push ./artifacts/publish/WinAudioRoute.$env:VERSION.snupkg
           --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate

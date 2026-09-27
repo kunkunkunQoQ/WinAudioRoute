@@ -29,10 +29,6 @@ winaudio volume chrome 35
 winaudio route game.exe --output "Speakers"
 ```
 
-> **Status: 0.1.0 pre-release.** The source, CLI and samples are complete and the NuGet packages are
-> built and verified, but **the package is not published to NuGet.org yet**. NuGet package publishing
-> is planned for v0.1.0 — until then, build from source (see [Building from source](#building-from-source)).
-
 ---
 
 ## Why WinAudioRoute
@@ -80,17 +76,23 @@ WinAudioRoute packages that work into a small, documented, dependency-free SDK p
 
 ## Installation
 
-> **Not on NuGet.org yet.** NuGet package publishing is planned for v0.1.0.
-> The command below will work once the package is published; until then use
-> [Building from source](#building-from-source).
-
 ```powershell
-# Planned for v0.1.0 — not yet available on NuGet.org
-dotnet add package WinAudioRoute
+dotnet add package WinAudioRoute --version 0.1.0
+```
+
+Current stable release: **0.1.0**
+
+```text
+NuGet:          https://www.nuget.org/packages/WinAudioRoute
+GitHub Release: https://github.com/kunkunkunQoQ/WinAudioRoute/releases/tag/v0.1.0
 ```
 
 Target framework: `net8.0-windows10.0.19041.0`. The package declares its Windows platform
 requirement, so the compiler warns if a project tries to use it on a non-Windows target.
+
+Also published with this release: a symbol package (`.snupkg`) carrying the portable PDB and
+SourceLink mapping, and prebuilt `winaudio` CLI archives for `win-x64` and `win-arm64`
+(checksums in `SHA256SUMS.txt`), all on the release page linked above.
 
 ### Building from source
 
@@ -543,14 +545,17 @@ manually triggered workflow for a self-hosted runner with audio devices.
 
 ---
 
-## Used By
+## Origin
 
-*Planned consumer — no project depends on WinAudioRoute yet.*
+WinAudioRoute was extracted from audio infrastructure originally developed for
+[SonicRoute](https://github.com/kunkunkunQoQ/SonicRoute).
 
-- **[SonicRoute](https://github.com/kunkunkunQoQ/SonicRoute)** — per-application Windows audio
-  device switching. **SonicRoute is planned to migrate to WinAudioRoute**; it has not migrated yet
-  and currently ships its own internal audio core. WinAudioRoute was extracted from it, and
-  SonicRoute's source was not modified during that extraction.
+The two projects are now maintained independently:
+
+- **WinAudioRoute** is a reusable .NET library and CLI for Windows audio control.
+- **SonicRoute** remains an independent desktop application with its own audio core.
+
+They may share implementation lessons and fixes, but SonicRoute does not depend on WinAudioRoute.
 
 ---
 
