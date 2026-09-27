@@ -86,14 +86,20 @@ jobs:
         with:
           user: kunkunkun   # nuget.org profile name (verified on the Trusted Publishing page)
 
+      # Push the nupkg. The CLI auto-submits the adjacent .snupkg to the
+      # symbol endpoint during this step, so a separate snupkg push below is
+      # defensive only. --skip-duplicate keeps re-runs idempotent (NuGet.org
+      # returns 409 if the version/symbols are already present or validating).
       - name: Push nupkg
         run: >
           dotnet nuget push ./artifacts/publish/WinAudioRoute.0.1.0.nupkg
           --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
 
       - name: Push snupkg
         run: >
           dotnet nuget push ./artifacts/publish/WinAudioRoute.0.1.0.snupkg
           --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
