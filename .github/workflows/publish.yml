@@ -1,0 +1,99 @@
+name: publish
+
+# Publishes the library to NuGet.org using Trusted Publishing (OIDC).
+# No long-lived API key is stored anywhere:
+#   - GitHub mints a short-lived OIDC id-token for this job
+#   - NuGet/login@v1 exchanges it for a ~1-hour NuGet API key
+#   - dotnet nuget push uses that key
+#
+# One-time setup on nuget.org (required before the first run):
+#   nuget.org -> username menu -> Trusted Publishing -> add policy:
+#     CI/CD Provider     : GitHub Actions
+#     Repository Owner   : kunkunkunQoQ
+#     Repository         : WinAudioRoute
+#     Workflow File      : publish.yml          <- this file's name only
+#     Environment        : (leave empty)
+#     Scopes             : Push new packages and package versions
+#     Glob patterns      : WinAudioRoute
+#
+# Triggers:
+#   - push of a v* tag  (standard release flow for future versions)
+#   - manual dispatch   (used for the initial v0.1.0 publish)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  CONFIGURATION: Release
+
+jobs:
+  publish:
+    name: Build, verify, publish to NuGet.org
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write   # required for OIDC trusted publishing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # SourceLink 与 symbols 需要完整历史
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore WinAudioRoute.sln
+
+      - name: Build
+        run: dotnet build WinAudioRoute.sln -c $env:CONFIGURATION --no-restore
+
+      # Safety gate before publishing: unit tests only.
+      # Hardware-dependent suites must NOT run on hosted runners (no audio endpoints).
+      - name: Unit tests
+        run: >
+          dotnet test WinAudioRoute.sln -c $env:CONFIGURATION --no-build
+          --filter "Category!=Integration&Category!=Mutation&Category!=Hardware&Category!=RealAudio"
+
+      - name: Pack
+        run: >
+          dotnet pack src/WinAudioRoute/WinAudioRoute.csproj -c $env:CONFIGURATION
+          --no-build -o ./artifacts/publish
+
+      - name: Verify package contents
+        shell: pwsh
+        run: ./eng/verify-package.ps1 -PackageDirectory ./artifacts/publish
+
+      - name: Verify SourceLink metadata
+        shell: pwsh
+        run: ./eng/verify-sourcelink.ps1
+
+      # Exchange the OIDC id-token for a short-lived NuGet API key.
+      # `user` must be the nuget.org profile name (not the email address).
+      - name: NuGet login (OIDC -> temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: kunkunkunQoQ   # nuget.org profile name; adjust if it differs
+
+      - name: Push nupkg
+        run: >
+          dotnet nuget push ./artifacts/publish/WinAudioRoute.0.1.0.nupkg
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+
+      - name: Push snupkg
+        run: >
+          dotnet nuget push ./artifacts/publish/WinAudioRoute.0.1.0.snupkg
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
