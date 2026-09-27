@@ -1,0 +1,36 @@
+# Line ending policy.
+#
+# The repository stores text with LF. Files are checked out with LF everywhere so that
+# shell scripts, YAML workflows and source stay byte-identical across platforms.
+#
+# Note: the .ps1 scripts are saved as UTF-8 *with BOM* (Windows PowerShell 5.1 reads BOM-less
+# files as ANSI, which corrupts non-ASCII content and can break script syntax). The BOM is part
+# of the file content and is preserved; this attribute only governs line endings.
+
+* text=auto eol=lf
+
+# Windows-specific script formats keep CRLF on checkout for maximum tool compatibility.
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.sln   text eol=crlf
+*.csproj text eol=crlf
+*.props text eol=crlf
+*.targets text eol=crlf
+
+# Binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.nupkg binary
+*.snupkg binary
+*.dll   binary
+*.pdb   binary
+
+# Keep these from being treated as text
+*.snk   binary

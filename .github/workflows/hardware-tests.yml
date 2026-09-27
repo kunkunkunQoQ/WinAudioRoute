@@ -1,0 +1,113 @@
+name: Hardware tests (opt-in)
+
+# MANUAL ONLY. This workflow is never a required check for pull requests.
+#
+# It targets a self-hosted Windows runner that has real audio devices:
+#     runs-on: [self-hosted, windows, audio]
+#
+# There is currently NO such runner registered for this repository, so this workflow exists as
+# the prepared hook for when a dedicated real-audio machine becomes available. Until then:
+#   - default CI (.github/workflows/ci.yml) covers builds, unit tests and packaging
+#   - real audio verification is done by a maintainer with scripts/test-real-audio.ps1
+#
+# IMPORTANT: mutation tests are NEVER automatic, even on a self-hosted runner.
+# They require RUN_AUDIO_MUTATION_TESTS=1 *and* the explicit `run_mutation_tests` input below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_mutation_tests:
+        description: 'Run mutation tests (MODIFIES real device/routing/volume state, then restores it)'
+        type: boolean
+        default: false
+      run_integration_tests:
+        description: 'Run read-only integration tests'
+        type: boolean
+        default: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  CONFIGURATION: Release
+
+jobs:
+  real-audio:
+    name: Real audio tests (self-hosted)
+    runs-on: [self-hosted, windows, audio]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Environment report
+        shell: pwsh
+        run: |
+          Write-Host "OS          : $([System.Environment]::OSVersion.VersionString)"
+          Write-Host "Architecture: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+          Write-Host "64-bit      : $([System.Environment]::Is64BitProcess)"
+
+          dotnet build WinAudioRoute.sln -c $env:CONFIGURATION
+
+          $cli = "src/WinAudioRoute.Cli/bin/$env:CONFIGURATION/net8.0-windows10.0.19041.0/winaudio.exe"
+          if (Test-Path $cli) {
+            $playback = @((& $cli devices --output --json | ConvertFrom-Json).data.devices)
+            $recording = @((& $cli devices --input --json | ConvertFrom-Json).data.devices)
+            Write-Host "Playback devices : $($playback.Count)"
+            Write-Host "Recording devices: $($recording.Count)"
+
+            if ($playback.Count -eq 0) {
+              Write-Error "This runner has no playback devices. Real audio tests cannot produce meaningful results here."
+              exit 1
+            }
+          }
+
+      # ----------------------------------------------------------------
+      # Read-only integration tests
+      # ----------------------------------------------------------------
+      - name: Integration tests (read-only)
+        if: inputs.run_integration_tests
+        run: >
+          dotnet test WinAudioRoute.sln -c $env:CONFIGURATION --no-build
+          --filter "Category=Integration"
+          --logger "trx;LogFileName=integration.trx"
+          --results-directory ./artifacts/test-results
+
+      # ----------------------------------------------------------------
+      # Mutation tests: gated twice (manual dispatch input + environment variable)
+      # ----------------------------------------------------------------
+      - name: Mutation tests (state-changing, restored)
+        if: inputs.run_mutation_tests
+        shell: pwsh
+        env:
+          RUN_AUDIO_MUTATION_TESTS: '1'
+        run: |
+          Write-Host "Mutation tests modify the default device, per-app routing, volume and mute."
+          Write-Host "They snapshot, modify, verify, and restore in finally blocks."
+
+          dotnet test WinAudioRoute.sln -c $env:CONFIGURATION --no-build `
+            --filter "Category=Mutation" `
+            --logger "trx;LogFileName=mutation.trx" `
+            --results-directory ./artifacts/test-results
+
+      - name: Full real-audio gate
+        shell: pwsh
+        run: |
+          $args = @('-SkipMutation')
+          if ('${{ inputs.run_mutation_tests }}' -eq 'true') { $args = @() }
+          & ./scripts/test-real-audio.ps1 @args
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-audio-results
+          path: ./artifacts/test-results
+          if-no-files-found: warn

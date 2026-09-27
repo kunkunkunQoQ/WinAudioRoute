@@ -1,0 +1,182 @@
+name: CI
+
+# Default CI scope: restore, build, unit tests, x64 + ARM64 builds, NuGet pack and package checks.
+#
+# It deliberately does NOT run the hardware-dependent suites.
+# A GitHub-hosted runner has no audio endpoints, so integration and mutation tests there would
+# mostly return early and then be reported as "passed" - a false green.
+# Real audio behaviour is verified separately on real Windows machines:
+#   - scripts/test-real-audio.ps1  (maintainer release gate)
+#   - .github/workflows/hardware-tests.yml (opt-in, self-hosted, manual only)
+#
+# CI verifies builds, unit tests and packaging.
+# Hardware-dependent Windows audio integration tests are validated separately on real Windows systems.
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  CONFIGURATION: Release
+
+jobs:
+  build-test-pack:
+    name: Build, unit tests, package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # SourceLink 与 symbols 需要完整历史
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Show SDK information
+        run: dotnet --info
+
+      - name: Restore
+        run: dotnet restore WinAudioRoute.sln
+
+      - name: Build
+        run: dotnet build WinAudioRoute.sln -c $env:CONFIGURATION --no-restore
+
+      # ----------------------------------------------------------------
+      # Unit tests only.
+      #
+      # The filter excludes every category that depends on real hardware or that
+      # mutates real system state. If new hardware categories are introduced
+      # (Category=Hardware, Category=RealAudio), they MUST be added here.
+      # ----------------------------------------------------------------
+      - name: Unit tests
+        run: >
+          dotnet test WinAudioRoute.sln -c $env:CONFIGURATION --no-build
+          --filter "Category!=Integration&Category!=Mutation&Category!=Hardware&Category!=RealAudio"
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory ./artifacts/test-results
+
+      - name: Assert no hardware-dependent tests sneaked into the CI scope
+        shell: pwsh
+        run: |
+          # 只统计本步骤真正执行的测试数量，并把范围写进日志。
+          # 这不能替代真实硬件验证，只是防止 CI 范围被悄悄扩大。
+          $trx = Get-ChildItem ./artifacts/test-results -Filter *.trx -ErrorAction SilentlyContinue
+          if (-not $trx) {
+            Write-Error "No test results were produced."
+            exit 1
+          }
+
+          [xml]$doc = Get-Content $trx[0]
+          $counter = $doc.TestRun.ResultSummary.Counters
+          Write-Host "CI test scope: total=$($counter.total) executed=$($counter.executed) passed=$($counter.passed) failed=$($counter.failed)"
+          Write-Host "This job intentionally covers unit tests only; hardware-dependent suites run on real machines."
+
+          if ([int]$counter.failed -ne 0) {
+            Write-Error "Unit tests failed."
+            exit 1
+          }
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: ./artifacts/test-results
+          if-no-files-found: warn
+
+      # ----------------------------------------------------------------
+      # Platform builds
+      # ----------------------------------------------------------------
+      - name: Build for win-x64
+        run: dotnet build src/WinAudioRoute/WinAudioRoute.csproj -c $env:CONFIGURATION -r win-x64
+
+      - name: Build for win-arm64 (cross-compile)
+        run: dotnet build src/WinAudioRoute/WinAudioRoute.csproj -c $env:CONFIGURATION -r win-arm64
+
+      - name: Verify produced architectures
+        shell: pwsh
+        run: |
+          # 只检查 PE 头里的 Machine 字段，不运行任何产物。
+          function Get-PEMachine([string]$path) {
+            if (-not (Test-Path $path)) { return 'missing' }
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            switch ($machine) {
+              0x8664 { return 'x64' }
+              0xAA64 { return 'ARM64' }
+              0x14C  { return 'x86' }
+              default { return ('0x{0:X}' -f $machine) }
+            }
+          }
+
+          $base = "src/WinAudioRoute/bin/$env:CONFIGURATION/net8.0-windows10.0.19041.0"
+          $noRid = Get-PEMachine "$base/WinAudioRoute.dll"
+          $x64   = Get-PEMachine "$base/win-x64/WinAudioRoute.dll"
+          $arm64 = Get-PEMachine "$base/win-arm64/WinAudioRoute.dll"
+
+          Write-Host "no-RID=$noRid  win-x64=$x64  win-arm64=$arm64"
+
+          if ($x64 -ne 'x64')   { Write-Error "win-x64 build is not x64 (got $x64).";   exit 1 }
+          if ($arm64 -ne 'ARM64') { Write-Error "win-arm64 build is not ARM64 (got $arm64)."; exit 1 }
+          Write-Host "Both RID builds produced the expected architecture."
+
+      # ----------------------------------------------------------------
+      # Packaging
+      # ----------------------------------------------------------------
+      - name: Pack
+        run: >
+          dotnet pack src/WinAudioRoute/WinAudioRoute.csproj -c $env:CONFIGURATION
+          --no-build -o ./artifacts/packages
+
+      - name: Verify package contents
+        shell: pwsh
+        run: ./eng/verify-package.ps1 -PackageDirectory ./artifacts/packages
+
+      # ----------------------------------------------------------------
+      # Documentation checks
+      # ----------------------------------------------------------------
+      - name: Verify XML documentation is complete
+        shell: pwsh
+        run: ./eng/verify-xml-docs.ps1
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./artifacts/packages
+          if-no-files-found: error
+
+  samples:
+    name: Sample projects build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build samples
+        run: |
+          dotnet build samples/DeviceSwitcher/DeviceSwitcher.csproj -c $env:CONFIGURATION
+          dotnet build samples/PerAppRouting/PerAppRouting.csproj -c $env:CONFIGURATION
+          dotnet build samples/SessionMonitor/SessionMonitor.csproj -c $env:CONFIGURATION
+
+      - name: Build CLI
+        run: dotnet build src/WinAudioRoute.Cli/WinAudioRoute.Cli.csproj -c $env:CONFIGURATION

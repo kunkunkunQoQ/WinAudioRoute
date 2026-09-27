@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+.vs/
+.idea/
+
+# ---------------------------------------------------------------------------
+# Packages and local artifacts
+# ---------------------------------------------------------------------------
+artifacts/
+*.nupkg
+*.snupkg
+
+# ---------------------------------------------------------------------------
+# Test results
+# ---------------------------------------------------------------------------
+TestResults/
+*.trx
+*.coverage
+coverage*.xml
+
+# ---------------------------------------------------------------------------
+# Logs and temporary files
+#
+# The real-audio test script (scripts/test-real-audio.ps1) writes state snapshots
+# and environment-bypass logs into the system temp directory, not the repository.
+# These patterns are a safety net in case anything is ever redirected here:
+# snapshots contain full device interface paths, which must never be committed.
+# ---------------------------------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+state-before.txt
+state-after.txt
+bypass-*.log
+snapshot-*.txt
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# Explicitly NOT ignored (listed for clarity; nothing below is excluded by the
+# patterns above, and these are the files that make the repository useful).
+#
+#   README.md      LICENSE        .gitignore
+#   src/           tests/         samples/
+#   docs/          eng/           scripts/
+#   .github/
+# ---------------------------------------------------------------------------
