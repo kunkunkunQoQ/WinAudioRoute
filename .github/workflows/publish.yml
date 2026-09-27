@@ -84,7 +84,7 @@ jobs:
         uses: NuGet/login@v1
         id: login
         with:
-          user: kunkunkunQoQ   # nuget.org profile name; adjust if it differs
+          user: kunkunkun   # nuget.org profile name (verified on the Trusted Publishing page)
 
       - name: Push nupkg
         run: >
